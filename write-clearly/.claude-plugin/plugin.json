@@ -1,0 +1,10 @@
+{
+  "name": "write-clearly",
+  "description": "Rules for any text a reader opens without context, from PR descriptions, commit messages and READMEs to SKILL.md files, agent briefs and code comments, with separate rules for text that agents read and text that people read.",
+  "author": {
+    "name": "davidvlv",
+    "url": "https://github.com/davidvlv"
+  },
+  "repository": "https://github.com/Davidvlv/claude-tools",
+  "license": "MIT"
+}

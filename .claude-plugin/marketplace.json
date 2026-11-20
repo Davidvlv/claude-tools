@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "claude-tools",
-  "description": "Skills for Claude Code: prompting Fable, an image looker, a Fable advisor and a Haiku worker for mechanical jobs.",
+  "description": "Skills for Claude Code: prompting Fable, an image looker, a Fable advisor, a Haiku worker for mechanical jobs and rules for writing clearly.",
   "owner": {
     "name": "davidvlv",
     "url": "https://github.com/davidvlv"
@@ -29,6 +29,12 @@
       "name": "haiku-worker",
       "description": "A background Haiku subagent does one mechanical job, such as a search, a test run or an edit to a written spec, and returns only its result, so the main agent keeps its context and every judgment.",
       "source": "./haiku-worker",
+      "category": "productivity"
+    },
+    {
+      "name": "write-clearly",
+      "description": "Rules for writing, revising and reviewing any text a reader opens cold: define terms, plain headings, ordered decision rules, plain sentences, no marks of generated text, no history, and code comments that explain why.",
+      "source": "./write-clearly",
       "category": "productivity"
     }
   ]
