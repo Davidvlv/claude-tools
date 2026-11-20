@@ -65,13 +65,13 @@ If you added the marketplace before a plugin was added to it, run `/plugin marke
 ## Where the scripts write
 
 - `look` keeps each call's prompts and answers in a `look-log.md` beside the first image, or in the after folder of a compare.
-- `no-claudisms` keeps per-session state in its plugin data folder and deletes files older than two days.
+- `no-claudisms` keeps per-session state in its plugin data folder and deletes files older than two days. It stores the mode set by `/no-claudisms` in `no-claudisms/mode.json` in the Claude config folder.
 - `advisor` appends each answer to `advisor/decisions.md` in the Claude config folder (`~/.claude`, or `CLAUDE_CONFIG_DIR` when it is set). It reads the last 20 entries for the same project back into later questions, so its answers stay consistent. Delete the file to clear that history.
 
 ## Tests
 
 ```
-node --test look/skills/look/look.test.mjs advisor/skills/advisor/advisor.test.mjs haiku-worker/skills/haiku-worker/wait.test.mjs no-claudisms/scripts/match.test.mjs no-claudisms/scripts/hook.test.mjs no-claudisms/scripts/reword.test.mjs
+node --test look/skills/look/look.test.mjs advisor/skills/advisor/advisor.test.mjs haiku-worker/skills/haiku-worker/wait.test.mjs no-claudisms/scripts/match.test.mjs no-claudisms/scripts/hook.test.mjs no-claudisms/scripts/reword.test.mjs no-claudisms/scripts/mode.test.mjs
 ```
 
 The `look` and `advisor` tests use a fake `claude` command; no test makes a model call.

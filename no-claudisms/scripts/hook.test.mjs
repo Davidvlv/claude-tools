@@ -9,6 +9,8 @@ import { handle } from './hook.mjs';
 import { MASK } from './match.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'no-claudisms-test-'));
+// The hooks read the /no-claudisms override from the Claude config folder; tests use an empty one.
+process.env.CLAUDE_CONFIG_DIR = tmp();
 const session = { session_id: 's1', prompt_id: 'p1', cwd: os.tmpdir() };
 
 const fails = async (items) => items.map(() => null);
@@ -139,31 +141,12 @@ test('a rewrite that drops bold, code or links is masked instead', async () => {
   assert.equal(out.hookSpecificOutput.displayContent, `**Plan:** ${MASK}\n`);
 });
 
-test('/no-claudisms sets the mode for all sessions without reaching the model', async () => {
-  const stateDir = tmp();
-  const cmd = (prompt, mode) => handle({ ...session, hook_event_name: 'UserPromptSubmit', prompt }, { stateDir, mode });
-  const display = (session_id, mode) =>
-    handle({ ...session, session_id, hook_event_name: 'MessageDisplay', delta: 'We delve into it.\n' }, { stateDir, mode, rewordFn: fixes });
-
-  const set = await cmd('/no-claudisms off');
-  assert.equal(set.decision, 'block');
-  assert.equal(set.hookSpecificOutput.suppressOriginalPrompt, true);
-  assert.match(set.reason, /mode: off, for all sessions/u);
-  assert.equal(await display('other-session'), undefined);
-  assert.match((await cmd('/no-claudisms')).reason, /mode: off\./u);
-
-  // The command works while off, and the plugin-prefixed form works too.
-  assert.match((await cmd('/no-claudisms:no-claudisms chat')).reason, /mode: chat/u);
-  assert.notEqual(await display('other-session'), undefined);
-  assert.match((await cmd('/no-claudisms loud')).reason, /unknown mode "loud"/u);
-});
-
-test('a later /config change wins over the command', async () => {
-  const stateDir = tmp();
-  await handle({ ...session, hook_event_name: 'UserPromptSubmit', prompt: '/no-claudisms off' }, { stateDir, mode: 'all' });
-  const display = (mode) => handle({ ...session, hook_event_name: 'MessageDisplay', delta: 'We delve into it.\n' }, { stateDir, mode, rewordFn: fixes });
+test('the /no-claudisms override decides which hooks act', async () => {
+  const modeFile = path.join(tmp(), 'mode.json');
+  fs.writeFileSync(modeFile, JSON.stringify({ mode: 'off', config: 'all' }));
+  const display = (mode) => handle({ ...session, hook_event_name: 'MessageDisplay', delta: 'We delve into it.\n' }, { stateDir: tmp(), mode, modeFile, rewordFn: fixes });
   assert.equal(await display('all'), undefined);
+  // A later /config change wins and drops the override.
   assert.notEqual(await display('chat'), undefined);
-  // The override is gone, so switching /config back does not bring it back.
-  assert.notEqual(await display('all'), undefined);
+  assert.equal(fs.existsSync(modeFile), false);
 });

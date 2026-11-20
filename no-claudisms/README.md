@@ -26,7 +26,7 @@ The plugin has one setting, `mode`. Set it in `/config`, or type `/no-claudisms 
 - `output`: only markdown files, commit and PR text, and subagent reports.
 - `off`: nothing.
 
-`/config` stores the choice under `pluginConfigs` in your `settings.json`. `/no-claudisms <mode>` sets the mode for all sessions, until you change it again with the command or in `/config`; the later change wins. `/no-claudisms` alone shows the current mode. A hook handles the command and blocks the prompt, so the model never sees it. The command's skill has `disable-model-invocation: true`, so its description is not in the model's context.
+`/config` stores the choice under `pluginConfigs` in your `settings.json`. `/no-claudisms <mode>` sets the mode for all sessions, until you change it again with the command or in `/config`; the later change wins. `/no-claudisms` alone shows the current mode. The command's skill runs `scripts/mode.mjs` as a shell step before the model sees it, and the model replies with the one line the script prints. Each use costs one short model turn. The skill has `disable-model-invocation: true`, so its description is not in the model's context, and it pre-approves only that script. The command's choice is stored in `no-claudisms/mode.json` in the Claude config folder (`~/.claude`, or `CLAUDE_CONFIG_DIR`).
 
 ## What is checked
 
@@ -57,7 +57,8 @@ Haiku gets only the sentence and the phrases to remove, not the hints, because t
 - `data/claudisms.json`: the upstream list, unchanged.
 - `data/overrides.json`: local changes on top of it, by term id. `off` turns a term off, with the reason. `aliases` replaces the upstream phrases. `patterns` adds regular expressions (case-insensitive). `hint` sets the hint. `phraseHints` sets a hint for one phrase of the term, for terms that group different words (`robust` also covers `seamless` and `holistic`). `extra` holds terms that are not upstream, in the upstream shape plus `patterns`. A term with no hint gets one taken from its upstream definition.
 - `scripts/hook.mjs`: the one entry point for every hook event.
-- `skills/no-claudisms/SKILL.md`: puts `/no-claudisms` in the command menu. Its text runs only when the hook did not handle the command.
+- `skills/no-claudisms/SKILL.md`: the `/no-claudisms` command.
+- `scripts/mode.mjs`: reads and sets the mode, for the hooks and the command.
 - `scripts/match.mjs`: the matcher.
 - `scripts/reword.mjs`: the Haiku reworder.
 - `scripts/refresh.mjs` and `scripts/corpus.mjs`: tools for maintainers, described below.
