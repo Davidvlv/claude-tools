@@ -6,5 +6,19 @@
     "url": "https://github.com/davidvlv"
   },
   "repository": "https://github.com/Davidvlv/claude-tools",
-  "license": "MIT"
+  "license": "MIT",
+  "userConfig": {
+    "mode": {
+      "type": "string",
+      "title": "Mode",
+      "description": "What to check. chat: the main agent's chat replies, reworded in place on screen. output: markdown files, commit and PR text, and subagent reports. all: both. off: nothing.",
+      "options": [
+        "all",
+        "chat",
+        "output",
+        "off"
+      ],
+      "default": "all"
+    }
+  }
 }

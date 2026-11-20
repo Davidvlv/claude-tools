@@ -11,27 +11,57 @@ import { MASK } from './match.mjs';
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'no-claudisms-test-'));
 const session = { session_id: 's1', prompt_id: 'p1', cwd: os.tmpdir() };
 
-test('MessageDisplay masks flagged clauses and passes clean text', async () => {
+const fails = async (items) => items.map(() => null);
+const fixes = async (items) => items.map((it) => it.clause.replace(/delve into/u, 'look at').replace(/robust/u, 'tested'));
+
+test('MessageDisplay rewords flagged clauses in place and passes clean text', async () => {
   const stateDir = tmp();
-  const clean = await handle({ ...session, hook_event_name: 'MessageDisplay', delta: 'All tests pass.\n' }, { stateDir });
+  const clean = await handle({ ...session, hook_event_name: 'MessageDisplay', delta: 'All tests pass.\n' }, { stateDir, rewordFn: fixes });
   assert.equal(clean, undefined);
-  const out = await handle({ ...session, hook_event_name: 'MessageDisplay', delta: 'Tests pass. We delve into it.\n' }, { stateDir });
+  const out = await handle({ ...session, hook_event_name: 'MessageDisplay', delta: 'Tests pass. We delve into it.\n' }, { stateDir, rewordFn: fixes });
   assert.equal(out.hookSpecificOutput.hookEventName, 'MessageDisplay');
-  assert.equal(out.hookSpecificOutput.displayContent, `Tests pass. ${MASK}\n`);
+  assert.equal(out.hookSpecificOutput.displayContent, 'Tests pass. We look at it.\n');
+  // Reworded in place, so the turn ends without a closing message.
+  assert.equal(await handle({ ...session, hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: 'Tests pass. We delve into it.' }, { stateDir }), undefined);
 });
 
-test('Stop blocks once for hits recorded by the display hook, then lets the rewrite through', async () => {
+test('the next prompt gets the reworded phrases once as a note', async () => {
   const stateDir = tmp();
-  await handle({ ...session, hook_event_name: 'MessageDisplay', delta: 'Step one is robust.\n' }, { stateDir });
+  await handle({ ...session, hook_event_name: 'MessageDisplay', delta: 'We delve into it.\n' }, { stateDir, rewordFn: fixes });
+  const note = await handle({ ...session, prompt_id: 'p2', hook_event_name: 'UserPromptSubmit', prompt: 'next' }, { stateDir });
+  assert.equal(note.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
+  assert.match(note.hookSpecificOutput.additionalContext, /"delve" in "We delve into it."/u);
+  assert.equal(await handle({ ...session, prompt_id: 'p3', hook_event_name: 'UserPromptSubmit', prompt: 'again' }, { stateDir }), undefined);
+});
+
+test('a failed or still-flagged rewrite is masked, and Stop asks the agent once', async () => {
+  const stateDir = tmp();
+  const out = await handle({ ...session, hook_event_name: 'MessageDisplay', delta: 'Step one is robust.\n' }, { stateDir, rewordFn: fails });
+  assert.equal(out.hookSpecificOutput.displayContent, `${MASK}
+`);
+  const still = await handle({ ...session, hook_event_name: 'MessageDisplay', delta: 'We delve into it.\n' }, { stateDir, rewordFn: async () => ['We dive into it.'] });
+  assert.equal(still.hookSpecificOutput.displayContent, `${MASK}
+`);
   const stop = await handle({ ...session, hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: 'Done.' }, { stateDir });
   assert.equal(stop.decision, 'block');
-  assert.match(stop.reason, /"robust" in "Step one is robust\."/u);
+  assert.match(stop.reason, /"robust" in "Step one is robust."/u);
 
-  // The reworded message in the same turn is shown as written, even with a hit.
-  const shown = await handle({ ...session, hook_event_name: 'MessageDisplay', delta: 'Still robust.\n' }, { stateDir });
+  // The agent's reworded closing message in the same turn is shown as written, even with a hit.
+  const shown = await handle({ ...session, hook_event_name: 'MessageDisplay', delta: 'Still robust.\n' }, { stateDir, rewordFn: fails });
   assert.equal(shown, undefined);
   const again = await handle({ ...session, hook_event_name: 'Stop', stop_hook_active: true, last_assistant_message: 'Still robust.' }, { stateDir });
   assert.equal(again, undefined);
+});
+
+test('modes choose which hooks act', async () => {
+  const display = { ...session, hook_event_name: 'MessageDisplay', delta: 'We delve into it.\n' };
+  const write = { ...session, hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: path.join(tmp(), 'm.md'), content: 'A seamless plan.' } };
+  const report = { ...session, hook_event_name: 'SubagentStop', stop_hook_active: false, last_assistant_message: 'A robust plan.' };
+  const acts = async (input, mode) => (await handle(input, { stateDir: tmp(), mode, rewordFn: fixes })) !== undefined;
+  assert.deepEqual([await acts(display, 'chat'), await acts(write, 'chat'), await acts(report, 'chat')], [true, false, false]);
+  assert.deepEqual([await acts(display, 'output'), await acts(write, 'output'), await acts(report, 'output')], [false, true, true]);
+  assert.deepEqual([await acts(display, 'off'), await acts(write, 'off'), await acts(report, 'off')], [false, false, false]);
+  assert.deepEqual([await acts(display, 'all'), await acts(write, 'all'), await acts(report, undefined)], [true, true, true]);
 });
 
 test('Stop checks the final message itself when no display hook ran', async () => {
@@ -99,4 +129,12 @@ test('a denial does not let the same hits through in a later turn', async () => 
   // The agent reworded instead of retrying; the next turn writes the same text.
   assert.ok(denied(await write('p2')));
   assert.equal(await write('p2'), undefined);
+});
+
+test('a rewrite that drops bold, code or links is masked instead', async () => {
+  const out = await handle(
+    { ...session, hook_event_name: 'MessageDisplay', delta: '**Plan:** we delve into `app.log`.\n' },
+    { stateDir: tmp(), rewordFn: async () => ['we look at app.log.'] },
+  );
+  assert.equal(out.hookSpecificOutput.displayContent, `**Plan:** ${MASK}\n`);
 });

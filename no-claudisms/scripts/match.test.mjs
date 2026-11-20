@@ -118,3 +118,8 @@ test('every phrase hint key matches a phrase of its entry', async () => {
     assert.ok(id in Object.fromEntries(list.terms.map((t) => [t.id, 1])), `${id}: override for a term that is not upstream`);
   }
 });
+
+test('a leading bold label stays outside the masked clause', () => {
+  const text = '**Plan:** we delve into it.';
+  assert.equal(mask(text, findHits(text, rules)), `**Plan:** ${MASK}`);
+});

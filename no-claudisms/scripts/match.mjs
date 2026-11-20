@@ -109,11 +109,12 @@ export function findHits(text, rules, opts) {
 }
 
 // A clause is the sentence around the hit, bounded by sentence punctuation, table cells and lines,
-// with any list, quote or heading marker left outside so masking keeps the markdown shape.
+// with any list, quote or heading marker and a leading bold label ("**Plan:**") left outside,
+// so masking or rewording keeps the markdown shape.
 export function clauseSpan(text, index, end) {
   let start = index;
   while (start > 0 && !/[\n|]/u.test(text[start - 1]) && !(/[.!?]/u.test(text[start - 2] ?? '') && /\s/u.test(text[start - 1]))) start--;
-  const lead = text.slice(start, index).match(/^\s*(?:(?:[-*+]|\d+[.)]|>|#{1,6})\s+)*/u)[0];
+  const lead = text.slice(start, index).match(/^\s*(?:(?:[-*+]|\d+[.)]|>|#{1,6})\s+)*(?:\*\*[^*\n]{1,60}\*\*\s+)?/u)[0];
   start += Math.min(lead.length, index - start);
   let stop = end;
   while (stop < text.length && !/[\n|]/u.test(text[stop])) {
@@ -127,16 +128,36 @@ export function clauseSpan(text, index, end) {
   return { clauseStart: start, clauseEnd: stop, clause: text.slice(start, stop) };
 }
 
-export function mask(text, hits) {
-  const spans = hits.map((h) => [h.clauseStart, h.clauseEnd]).sort((a, b) => a[0] - b[0]);
+// Hits whose clauses overlap share one group, so each sentence is reworded or masked once.
+export function clauseGroups(text, hits) {
+  const groups = [];
+  for (const h of [...hits].sort((x, y) => x.clauseStart - y.clauseStart)) {
+    const g = groups[groups.length - 1];
+    if (g && h.clauseStart < g.end) {
+      g.end = Math.max(g.end, h.clauseEnd);
+      g.hits.push(h);
+    } else {
+      groups.push({ start: h.clauseStart, end: h.clauseEnd, hits: [h] });
+    }
+  }
+  for (const g of groups) g.clause = text.slice(g.start, g.end);
+  return groups;
+}
+
+// A null replacement masks its clause.
+export function replaceClauses(text, groups, replacements) {
   let out = '';
   let pos = 0;
-  for (const [s, e] of spans) {
-    if (e <= pos) continue;
-    out += text.slice(pos, Math.max(s, pos)) + MASK;
-    pos = e;
-  }
+  groups.forEach((g, i) => {
+    out += text.slice(pos, g.start) + (replacements[i] ?? MASK);
+    pos = g.end;
+  });
   return out + text.slice(pos);
+}
+
+export function mask(text, hits) {
+  const groups = clauseGroups(text, hits);
+  return replaceClauses(text, groups, groups.map(() => null));
 }
 
 // Hits the change adds: per rule, only as many as the new text has beyond the old,

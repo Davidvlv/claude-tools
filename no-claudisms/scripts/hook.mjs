@@ -3,19 +3,29 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadRules, findHits, addedHits, mask, hitLines } from './match.mjs';
+import { loadRules, findHits, addedHits, clauseGroups, replaceClauses, hitLines } from './match.mjs';
+import { reword, CHILD_ENV } from './reword.mjs';
 
 const PROSE_FILE = /\.(?:md|mdx|markdown|txt)$/iu;
 const PUBLISH_COMMAND = /\bgit\s+(?:-[cC]\s+\S+\s+)*commit\b|\bgh\s+(?:pr|issue)\s+(?:create|edit|comment)\b|\bgh\s+pr\s+review\b/u;
 const BODY_FILE = /(?:^|\s)(?:-F|--file|--body-file)(?:\s+|=)(?:"([^"]+)"|'([^']+)'|([^\s;|&]+))/gu;
 const STATE_DAYS = 2;
+const MODES = { all: ['chat', 'output'], chat: ['chat'], output: ['output'], off: [] };
+const EVENT_SCOPE = { MessageDisplay: 'chat', Stop: 'chat', UserPromptSubmit: 'chat', SubagentStop: 'output', PreToolUse: 'output' };
+const MAX_NOTES = 8;
 
-export async function handle(input, { rules = loadRules(), stateDir = defaultStateDir() } = {}) {
+export async function handle(input, { rules = loadRules(), stateDir = defaultStateDir(), mode = process.env.CLAUDE_PLUGIN_OPTION_MODE, rewordFn = reword } = {}) {
+  // The reworder's own claude process must not run these hooks on its reply.
+  if (process.env[CHILD_ENV]) return undefined;
+  const scopes = MODES[mode] ?? MODES.all;
+  if (!scopes.includes(EVENT_SCOPE[input.hook_event_name])) return undefined;
   switch (input.hook_event_name) {
     case 'MessageDisplay':
-      return onDisplay(input, rules, stateDir);
+      return onDisplay(input, rules, stateDir, rewordFn);
     case 'Stop':
       return onStop(input, rules, stateDir);
+    case 'UserPromptSubmit':
+      return onPrompt(input, stateDir);
     case 'SubagentStop':
       return onSubagentStop(input, rules);
     case 'PreToolUse':
@@ -25,17 +35,44 @@ export async function handle(input, { rules = loadRules(), stateDir = defaultSta
   }
 }
 
-// The display hook only hides text on screen; the model never sees the masked version.
-// It records what it hid so the Stop hook can ask for the reworded content.
-function onDisplay(input, rules, stateDir) {
+// The display hook changes only the screen; the model and the transcript keep the original.
+// Flagged sentences are reworded in place by Haiku. A sentence Haiku cannot fix is masked,
+// and the Stop hook then asks the agent itself for the reworded content.
+async function onDisplay(input, rules, stateDir, rewordFn) {
   const state = readState(stateDir, input.session_id);
   const turn = turnOf(state, input);
-  if (turn.requested) return undefined;
-  const hits = findHits(input.delta ?? '', rules);
-  if (hits.length === 0) return undefined;
-  turn.hits.push(...hits.map(({ id, match, clause, clauseStart, index, hint }) => ({ id, match, clause, clauseStart, index, hint })));
+  const firstCall = !turn.displayed;
+  turn.displayed = true;
+  const text = input.delta ?? '';
+  // After a rewrite request, the agent's reworded closing message is shown as written.
+  const hits = turn.requested ? [] : findHits(text, rules);
+  if (hits.length === 0) {
+    if (firstCall) writeState(stateDir, input.session_id, state);
+    return undefined;
+  }
+  const groups = clauseGroups(text, hits);
+  const rewrites = await rewordFn(groups.map((g) => ({ clause: g.clause, hits: g.hits })));
+  const replacements = groups.map((g, i) => {
+    const r = rewrites[i];
+    return r && findHits(r, rules).length === 0 && sameMarkup(g.clause, r) ? r : null;
+  });
+  groups.forEach((g, i) => {
+    if (replacements[i] === null) turn.hits.push(...g.hits.map(slim));
+  });
+  for (const h of hits) if (!state.notes.some((n) => n.match.toLowerCase() === h.match.toLowerCase())) state.notes.push(slim(h));
+  state.notes = state.notes.slice(-MAX_NOTES);
   writeState(stateDir, input.session_id, state);
-  return { hookSpecificOutput: { hookEventName: 'MessageDisplay', displayContent: mask(input.delta, hits) } };
+  return { hookSpecificOutput: { hookEventName: 'MessageDisplay', displayContent: replaceClauses(text, groups, replacements) } };
+}
+
+// Haiku sometimes drops bold, code or links; such a rewrite would change what the person reads.
+function sameMarkup(before, after) {
+  const marks = (s) => ['**', '`', '](', '_'].map((m) => s.split(m).length);
+  return marks(before).join() === marks(after).join();
+}
+
+function slim({ id, match, clause, hint }) {
+  return { id, match, clause, hint };
 }
 
 function onStop(input, rules, stateDir) {
@@ -46,19 +83,19 @@ function onStop(input, rules, stateDir) {
     writeState(stateDir, input.session_id, state);
     return undefined;
   }
-  // The final message is checked here too, for clients where the display hook does not run.
-  const hits = [...turn.hits];
-  for (const h of findHits(input.last_assistant_message ?? '', rules)) {
-    if (!hits.some((k) => k.id === h.id && k.clause === h.clause)) hits.push(h);
-  }
+  // Where the display hook ran, it already reworded what it could and left only the failures.
+  // Where it did not run (older clients), the final message is checked here.
+  const hits = turn.displayed ? [...turn.hits] : findHits(input.last_assistant_message ?? '', rules);
   if (hits.length === 0) {
-    if (state.turns[turnKey(input)]?.hits.length) {
+    if (state.turns[turnKey(input)]) {
       delete state.turns[turnKey(input)];
       writeState(stateDir, input.session_id, state);
     }
     return undefined;
   }
   turn.requested = true;
+  // The agent is told about these now, so the next prompt does not repeat them as a note.
+  state.notes = state.notes.filter((n) => !hits.some((h) => h.match.toLowerCase() === n.match.toLowerCase()));
   writeState(stateDir, input.session_id, state);
   return {
     decision: 'block',
@@ -67,6 +104,22 @@ function onStop(input, rules, stateDir) {
       'Send one short closing message that says the content of the flagged sentences again in plain words. ' +
       'Do no new work, and do not mention this check.\n' +
       hitLines(hits),
+  };
+}
+
+// The phrases Haiku reworded on screen are still in the agent's own transcript, so the agent
+// gets them once, at the next prompt, to avoid them from then on.
+function onPrompt(input, stateDir) {
+  const state = readState(stateDir, input.session_id);
+  if (state.notes.length === 0) return undefined;
+  const notes = state.notes;
+  state.notes = [];
+  writeState(stateDir, input.session_id, state);
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'UserPromptSubmit',
+      additionalContext: 'no-claudisms: your last replies used these stock phrases, which were reworded on screen. Avoid them:\n' + hitLines(notes),
+    },
   };
 }
 
@@ -154,7 +207,7 @@ function turnKey(input) {
 }
 
 function turnOf(state, input) {
-  return (state.turns[turnKey(input)] ??= { hits: [], requested: false });
+  return (state.turns[turnKey(input)] ??= { hits: [], requested: false, displayed: false });
 }
 
 function defaultStateDir() {
@@ -168,9 +221,9 @@ function stateFile(dir, sessionId) {
 function readState(dir, sessionId) {
   try {
     const s = JSON.parse(fs.readFileSync(stateFile(dir, sessionId), 'utf8'));
-    return { turns: s.turns ?? {}, denied: s.denied ?? {} };
+    return { turns: s.turns ?? {}, denied: s.denied ?? {}, notes: s.notes ?? [] };
   } catch {
-    return { turns: {}, denied: {} };
+    return { turns: {}, denied: {}, notes: [] };
   }
 }
 
