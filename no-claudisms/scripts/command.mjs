@@ -208,27 +208,61 @@ const GIT = /(?:^|[\\/])git(?:\.exe)?$/iu;
 const GH = /(?:^|[\\/])gh(?:\.exe)?$/iu;
 const GIT_VALUE_OPTS = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path', '--config-env']);
 
-// Returns { kind, text } for the first publishing command, with the text of every message
-// argument it has, or undefined when the command publishes nothing.
+// Returns { kind, text } with the text of every message argument in the command, or undefined
+// when the command publishes nothing. kind names the first command that has a message argument,
+// so a label-only `gh issue edit` before `gh issue comment --body` does not take the name.
 // readText(file) returns a file's text, or '' when it cannot be read.
-export function publishedText(command, { shell = 'bash', cwd = '.', readText }) {
+// Agents often pass body files as `--body-file $SP/pr.md`, so a file path is expanded with the
+// variables assigned earlier in the same command, then env.
+export function publishedText(command, { shell = 'bash', cwd = '.', readText, env = process.env, platform = process.platform }) {
   let kind;
+  let firstKind;
   const texts = [];
+  const vars = new Map();
+  const expand = (v) => v.replace(/\$(?:\{(\w+)\}|(?:env:)?(\w+))/giu, (m, a, b) => vars.get(a ?? b) ?? env[a ?? b] ?? m);
+  const filePath = (dir, v) => (v === '-' ? '-' : path.resolve(dir, nativePath(expand(v), shell, platform)));
   for (const seg of segments(command, shell)) {
+    const assigned = assignments(seg.words, shell);
+    if (assigned) {
+      for (const [name, value] of assigned) vars.set(name, expand(value));
+      continue;
+    }
     const w = seg.words.slice(seg.words.findIndex((x) => !/^\w+=/u.test(x)));
     if (w[0] === '&' || w[0] === '.') w.shift();
     let found;
-    if (GIT.test(w[0] ?? '')) found = gitCommit(w, cwd);
-    else if (GH.test(w[0] ?? '')) found = ghText(w, cwd);
+    if (GIT.test(w[0] ?? '')) found = gitCommit(w, cwd, filePath);
+    else if (GH.test(w[0] ?? '')) found = ghText(w, cwd, filePath);
     if (!found) continue;
-    kind ??= found.kind;
+    firstKind ??= found.kind;
+    if (found.messages.length > 0 || found.files.length > 0) kind ??= found.kind;
     texts.push(...found.messages);
     for (const f of found.files) texts.push(f === '-' ? seg.stdin.join('\n') : readText(f));
   }
+  kind ??= firstKind;
   return kind ? { kind, text: texts.filter(Boolean).join('\n\n') } : undefined;
 }
 
-function gitCommit(w, cwd) {
+// Returns [name, value] pairs when the segment only assigns variables: `SP=/x`, `export SP=/x`,
+// or PowerShell `$f = "x"` and `$env:F = "x"`.
+function assignments(w, shell) {
+  if (shell === 'powershell') {
+    const spaced = w.length === 3 && w[1] === '=' ? w[0].match(/^\$(?:env:)?(\w+)$/iu) : null;
+    if (spaced) return [[spaced[1], w[2]]];
+    const joined = w.length === 1 ? w[0].match(/^\$(?:env:)?(\w+)=([\s\S]*)$/iu) : null;
+    return joined ? [[joined[1], joined[2]]] : undefined;
+  }
+  const rest = w[0] === 'export' ? w.slice(1) : w;
+  if (rest.length === 0 || !rest.every((x) => /^\w+=/u.test(x))) return undefined;
+  return rest.map((x) => [x.slice(0, x.indexOf('=')), x.slice(x.indexOf('=') + 1)]);
+}
+
+// Git Bash writes C:\x as /c/x, which Node on Windows would read as C:\c\x.
+function nativePath(file, shell, platform) {
+  if (platform !== 'win32' || shell === 'powershell') return file;
+  return file.replace(/^\/([a-zA-Z])(?=\/|$)/u, '$1:');
+}
+
+function gitCommit(w, cwd, filePath) {
   let j = 1;
   let dir = cwd;
   while (j < w.length && w[j].startsWith('-')) {
@@ -244,20 +278,20 @@ function gitCommit(w, cwd) {
     const long = a.match(/^--(message|file)(?:=([\s\S]*))?$/u);
     if (long) {
       const v = long[2] ?? w[++k];
-      if (v !== undefined) (long[1] === 'message' ? messages : files).push(long[1] === 'file' ? resolve(dir, v) : v);
+      if (v !== undefined) (long[1] === 'message' ? messages : files).push(long[1] === 'file' ? filePath(dir, v) : v);
       continue;
     }
     // Short options cluster (-am "msg"); the value of -m or -F is the rest of the cluster or the next word.
     const short = a.match(/^-([a-zA-Z]*?)([mF])([\s\S]*)$/u);
     if (short && !a.startsWith('--')) {
       const v = short[3] !== '' ? short[3] : w[++k];
-      if (v !== undefined) (short[2] === 'm' ? messages : files).push(short[2] === 'F' ? resolve(dir, v) : v);
+      if (v !== undefined) (short[2] === 'm' ? messages : files).push(short[2] === 'F' ? filePath(dir, v) : v);
     }
   }
   return { kind: 'git commit', messages, files };
 }
 
-function ghText(w, cwd) {
+function ghText(w, cwd, filePath) {
   const sub = `${w[1]} ${w[2]}`;
   if (!/^(?:(?:pr|issue) (?:create|edit|comment)|pr review)$/u.test(sub)) return undefined;
   const messages = [];
@@ -267,18 +301,14 @@ function ghText(w, cwd) {
     const long = a.match(/^--(title|body|body-file)(?:=([\s\S]*))?$/u);
     if (long) {
       const v = long[2] ?? w[++k];
-      if (v !== undefined) (long[1] === 'body-file' ? files : messages).push(long[1] === 'body-file' ? resolve(cwd, v) : v);
+      if (v !== undefined) (long[1] === 'body-file' ? files : messages).push(long[1] === 'body-file' ? filePath(cwd, v) : v);
       continue;
     }
     const short = a.match(/^-([tbF])([\s\S]*)$/u);
     if (short) {
       const v = short[2] !== '' ? short[2] : w[++k];
-      if (v !== undefined) (short[1] === 'F' ? files : messages).push(short[1] === 'F' ? resolve(cwd, v) : v);
+      if (v !== undefined) (short[1] === 'F' ? files : messages).push(short[1] === 'F' ? filePath(cwd, v) : v);
     }
   }
   return { kind: `gh ${sub}`, messages, files };
-}
-
-function resolve(dir, file) {
-  return file === '-' ? '-' : path.resolve(dir, file);
 }

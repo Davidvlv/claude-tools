@@ -39,6 +39,26 @@ test('gh titles, bodies and body files', () => {
   assert.equal(publishedText('gh pr view 3', { readText }), undefined);
 });
 
+test('kind names the first command with a message, not a label-only edit before it', () => {
+  const kind = (command) => publishedText(command, { cwd: '/repo', readText })?.kind;
+  assert.equal(kind('gh issue edit 3 --add-label doing && gh issue comment 3 --body "Done."'), 'gh issue comment');
+  assert.equal(kind('gh issue edit 3 --add-label doing'), 'gh issue edit');
+});
+
+test('body file paths expand variables set earlier in the command, then env', () => {
+  const env = { TEMP: '/repo' };
+  const at = (command, shell, platform = 'linux') => publishedText(command, { shell, cwd: '/', readText, env, platform })?.text;
+  assert.equal(at('SP=/repo; gh pr create -t T --body-file $SP/msg.txt'), 'T\n\nFrom the file.');
+  assert.equal(at('export D=/repo/sub && git commit -F "${D}/m.txt"'), 'Sub file.');
+  assert.equal(at('gh issue comment 4 -F $TEMP/msg.txt'), 'From the file.');
+  assert.equal(at('$f = "/repo/msg.txt"; gh issue create -t T --body-file $f', 'powershell'), 'T\n\nFrom the file.');
+  assert.equal(at('gh pr edit 3 -F $env:TEMP/msg.txt', 'powershell'), 'From the file.');
+  assert.equal(at('gh pr edit 3 -F $NOPE/msg.txt'), '');
+  const seen = [];
+  publishedText('gh pr edit 3 -F /c/repo/msg.txt', { cwd: '/', readText: (f) => (seen.push(f), ''), platform: 'win32' });
+  assert.match(seen[0], /c:[\\/]repo[\\/]msg\.txt$/iu);
+});
+
 test('code elsewhere in the command is not message text', () => {
   const command = "cat > src/a.gd <<'EOF'\n# A robust loader.\nvar x = \"seamless\"\nEOF\ngit add src/a.gd && git commit -m 'Add loader'";
   assert.equal(text(command), 'Add loader');
