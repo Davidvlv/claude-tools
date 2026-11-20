@@ -3,14 +3,18 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadRules, findHits, addedHits, clauseGroups, replaceClauses, hitLines } from './match.mjs';
+import { loadRules, findHits, addedHits, clauseGroups, replaceClauses, hitLines, keepsFacts } from './match.mjs';
 import { reword, CHILD_ENV } from './reword.mjs';
 import { MODES, effectiveMode } from './mode.mjs';
 import { logEdit, logDir } from './log.mjs';
+import { publishedText } from './command.mjs';
 
-const PROSE_FILE = /\.(?:md|mdx|markdown|txt)$/iu;
-const PUBLISH_COMMAND = /\bgit\s+(?:-[cC]\s+\S+\s+)*commit\b|\bgh\s+(?:pr|issue)\s+(?:create|edit|comment)\b|\bgh\s+pr\s+review\b/u;
-const BODY_FILE = /(?:^|\s)(?:-F|--file|--body-file)(?:\s+|=)(?:"([^"]+)"|'([^']+)'|([^\s;|&]+))/gu;
+const PROSE_FILE = /\.(?:md|mdx|markdown)$/iu;
+// Most .txt files are not prose (CMakeLists.txt, requirements.txt, test data), so only named prose files count.
+const PROSE_TXT = /(?:^|[\\/])(?:readme|changelog|changes|history|notes|todo|contributing|release[-_ ]?notes)[^\\/]*\.txt$/iu;
+// Test data must stay as written, even when it is markdown.
+const DATA_DIR = /(?:^|[\\/])(?:fixtures?|testdata|test[-_]data|__snapshots__|snapshots|goldens?|expected)[\\/]/iu;
+const CHECKED_TOOLS = { Bash: 'bash', PowerShell: 'powershell' };
 const STATE_DAYS = 2;
 const EVENT_SCOPE = { MessageDisplay: 'chat', Stop: 'chat', UserPromptSubmit: 'chat', SubagentStop: 'output', PreToolUse: 'output' };
 const MAX_NOTES = 8;
@@ -59,13 +63,19 @@ async function onDisplay(input, rules, stateDir, rewordFn, log) {
   const rewrites = await rewordFn(groups.map((g) => ({ clause: g.clause, hits: g.hits })));
   const replacements = groups.map((g, i) => {
     const r = rewrites[i];
-    return r && findHits(r, rules).length === 0 && sameMarkup(g.clause, r) ? r : null;
+    return r && findHits(r, rules).length === 0 && sameMarkup(g.clause, r) && keepsFacts(g, r) ? r : null;
   });
   groups.forEach((g, i) => {
     if (replacements[i] === null) turn.hits.push(...g.hits.map(slim));
     log(replacements[i] === null ? 'masked' : 'reworded', { clause: g.clause, replacement: replacements[i], hits: g.hits.map(brief) });
   });
-  for (const h of hits) if (!state.notes.some((n) => n.match.toLowerCase() === h.match.toLowerCase())) state.notes.push(slim(h));
+  // The agent's transcript keeps its own wording, so the note says what the person read instead.
+  groups.forEach((g, i) => {
+    for (const h of g.hits) {
+      if (state.notes.some((n) => n.match.toLowerCase() === h.match.toLowerCase())) continue;
+      state.notes.push(replacements[i] === null ? slim(h) : { ...slim(h), shown: replacements[i] });
+    }
+  });
   state.notes = state.notes.slice(-MAX_NOTES);
   writeState(stateDir, input.session_id, state);
   return { hookSpecificOutput: { hookEventName: 'MessageDisplay', displayContent: replaceClauses(text, groups, replacements) } };
@@ -136,13 +146,30 @@ function onPrompt(input, stateDir) {
 
 function onSubagentStop(input, rules, log) {
   if (input.stop_hook_active) return undefined;
-  const hits = findHits(input.last_assistant_message ?? '', rules);
+  const report = input.last_assistant_message ?? '';
+  // A JSON report is read by code, so a reworded copy could break its caller.
+  if (isJson(report)) return undefined;
+  const hits = findHits(report, rules);
   if (hits.length === 0) return undefined;
   log('report-reword-requested', { agent: input.agent_type, hits: hits.map(brief) });
   return {
     decision: 'block',
-    reason: 'no-claudisms: your report uses stock AI phrasing. Send the report again with these reworded in plain words:\n' + hitLines(hits),
+    reason:
+      'no-claudisms: your report uses stock AI phrasing. Send the same report again with only these phrases reworded in plain words. ' +
+      'Make no tool calls and do no new work. Keep every fact, file path, name, number and code snippet as it was, and do not shorten the report:\n' +
+      hitLines(hits),
   };
+}
+
+function isJson(text) {
+  const t = text.trim();
+  if (!/^[[{]/u.test(t)) return false;
+  try {
+    JSON.parse(t);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function onPreToolUse(input, rules, stateDir, log) {
@@ -173,19 +200,23 @@ function onPreToolUse(input, rules, stateDir, log) {
   };
 }
 
+export function isProseFile(file) {
+  return (PROSE_FILE.test(file) || PROSE_TXT.test(file)) && !DATA_DIR.test(file);
+}
+
 // Returns the prose a tool call adds, or undefined when the call is not checked.
-// Command text is scanned with quotes included, because -m "..." carries the message itself.
+// For commands, only the message arguments count, never the rest of the command.
 export function prose(input) {
   const ti = input.tool_input ?? {};
   switch (input.tool_name) {
     case 'Write':
-      if (!PROSE_FILE.test(ti.file_path ?? '')) return undefined;
+      if (!isProseFile(ti.file_path ?? '')) return undefined;
       return { key: ti.file_path, what: 'file', before: readText(ti.file_path), after: ti.content ?? '', quotes: true };
     case 'Edit':
-      if (!PROSE_FILE.test(ti.file_path ?? '')) return undefined;
+      if (!isProseFile(ti.file_path ?? '')) return undefined;
       return { key: ti.file_path, what: 'edit', before: ti.old_string ?? '', after: ti.new_string ?? '', quotes: true };
     case 'MultiEdit':
-      if (!PROSE_FILE.test(ti.file_path ?? '')) return undefined;
+      if (!isProseFile(ti.file_path ?? '')) return undefined;
       return {
         key: ti.file_path,
         what: 'edit',
@@ -195,12 +226,9 @@ export function prose(input) {
       };
     case 'Bash':
     case 'PowerShell': {
-      const command = ti.command ?? '';
-      const kind = command.match(PUBLISH_COMMAND);
-      if (!kind) return undefined;
-      const files = [...command.matchAll(BODY_FILE)].map((m) => m[1] ?? m[2] ?? m[3]).filter((f) => f !== '-');
-      const bodies = files.map((f) => readText(path.resolve(input.cwd ?? '.', f)));
-      return { key: `command:${kind[0].replace(/\s+/gu, ' ')}`, what: 'command', before: '', after: [command, ...bodies].join('\n'), quotes: false };
+      const published = publishedText(ti.command ?? '', { shell: CHECKED_TOOLS[input.tool_name], cwd: input.cwd ?? '.', readText });
+      if (!published) return undefined;
+      return { key: `command:${published.kind}`, what: 'message', before: '', after: published.text, quotes: true };
     }
     default:
       return undefined;

@@ -177,8 +177,30 @@ export function addedHits(oldText, newText, rules, opts) {
   return added.sort((a, b) => a.index - b.index);
 }
 
+// Numbers, paths, file names, identifiers, flags, acronyms and mid-sentence names.
+const FACT = /\d+(?:[.,:]\d+)*%?|\w[\w-]*(?:[./\\:#]\w[\w-]*)+|\w*_\w+|\b[a-z]+[A-Z]\w*|\b[A-Z][A-Z0-9]+\b|(?<![\w-])--?[a-z][\w-]*|(?<=\S\s+)[A-Z][a-z]\w*/gu;
+const NEGATION = /\b(?:not|no|never|none|nothing|nobody|nor|neither|without|cannot)\b|n['’]t\b/giu;
+
+// A rewrite may change only wording: every fact of the clause outside the flagged phrases must
+// survive it, and it may drop only the negations inside those phrases ("it's not X, it's Y").
+// group: { start, clause, hits } from clauseGroups.
+export function keepsFacts(group, rewrite) {
+  let outside = group.clause;
+  for (const h of group.hits) {
+    const a = h.index - group.start;
+    const b = h.end - group.start;
+    outside = outside.slice(0, a) + ' '.repeat(b - a) + outside.slice(b);
+  }
+  const count = (text, s) => text.split(s).length - 1;
+  for (const fact of new Set(outside.match(FACT) ?? [])) if (count(rewrite, fact) < count(outside, fact)) return false;
+  const negations = (s) => (s.match(NEGATION) ?? []).length;
+  const after = negations(rewrite);
+  return after <= negations(group.clause) && after >= negations(outside);
+}
+
 export function hitLines(hits) {
-  const lines = hits.slice(0, MAX_HITS).map((h) => `- "${h.match}" in "${clip(h)}" -> ${h.hint}`);
+  const shown = (h) => (h.shown ? ` (the person saw "${shorten(h.shown.replace(/\s+/gu, ' '), CLAUSE_CHARS)}")` : '');
+  const lines = hits.slice(0, MAX_HITS).map((h) => `- "${h.match}" in "${clip(h)}" -> ${h.hint}${shown(h)}`);
   if (hits.length > MAX_HITS) lines.push(`- +${hits.length - MAX_HITS} more`);
   return lines.join('\n');
 }

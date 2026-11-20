@@ -15,6 +15,7 @@ const SYSTEM = [
   'Write each sentence again with the same meaning and the same facts, names, numbers, code, links and markdown, without the listed phrases.',
   'Use plain words. Do not join clauses with dashes.',
   'Keep every fact: "not just X, it is Y" still says both X and Y.',
+  'Copy every number, name, file name, path, identifier and command flag exactly, and keep each "not", "no" and "never" outside the listed phrases.',
   'You know only what the sentence says, so never add a claim, detail or example it does not make: replace a vague phrase with a plain word of the same vagueness, or drop it.',
   'Reply with only the reworded sentences, one per line, each starting with its number and a period, in the same order.',
 ].join(' ');

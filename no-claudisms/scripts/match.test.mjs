@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadRules, findHits, addedHits, mask, hitLines, aliasSource, extractHint, MASK } from './match.mjs';
+import { loadRules, findHits, addedHits, mask, hitLines, aliasSource, extractHint, keepsFacts, MASK } from './match.mjs';
 
 const rules = loadRules();
 const ids = (text, opts) => findHits(text, rules, opts).map((h) => h.id);
@@ -122,4 +122,13 @@ test('every phrase hint key matches a phrase of its entry', async () => {
 test('a leading bold label stays outside the masked clause', () => {
   const text = '**Plan:** we delve into it.';
   assert.equal(mask(text, findHits(text, rules)), `**Plan:** ${MASK}`);
+});
+
+test('keepsFacts lets a rewrite drop only the negations inside the flagged phrase', () => {
+  const clause = "It's not a bug, it's a feature.";
+  const hits = findHits(clause, rules);
+  assert.deepEqual(hits.map((h) => h.id), ['negative-parallelism']);
+  const group = { start: 0, clause, hits };
+  assert.equal(keepsFacts(group, 'It is a feature.'), true);
+  assert.equal(keepsFacts(group, 'It is not a feature, and never was.'), false);
 });

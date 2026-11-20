@@ -168,3 +168,49 @@ test('each edit and request goes to the edit log', async () => {
   assert.equal(log[0].session, 's1');
   assert.deepEqual(log[3].hits.map((h) => h.match.toLowerCase()), ['seamless']);
 });
+
+test('only prose files count: no plain .txt files and nothing under test-data folders', async () => {
+  const stateDir = tmp();
+  const write = (file) => handle(pre('Write', { file_path: path.join(tmp(), file), content: 'A seamless plan.' }), { stateDir });
+  assert.equal(await write('CMakeLists.txt'), undefined);
+  assert.equal(await write('requirements.txt'), undefined);
+  assert.equal(await write(path.join('tests', 'fixtures', 'case.md')), undefined);
+  assert.equal(await write(path.join('__snapshots__', 'view.md')), undefined);
+  assert.ok(denied(await write('README.txt')));
+  assert.ok(denied(await write('CHANGELOG.txt')));
+});
+
+test('a command that writes code and commits is checked only on its message', async () => {
+  const stateDir = tmp();
+  const code = "cat > a.gd <<'EOF'\n# A robust loader.\nEOF\ngit add a.gd && git commit -m 'Add loader'";
+  assert.equal(await handle(pre('Bash', { command: code }), { stateDir }), undefined);
+  const flagged = await handle(pre('Bash', { command: code.replace('Add loader', 'Add a seamless loader') }), { stateDir });
+  assert.ok(denied(flagged));
+  assert.doesNotMatch(flagged.hookSpecificOutput.permissionDecisionReason, /robust/u);
+});
+
+test('SubagentStop asks for the same report with no new work, and skips JSON reports', async () => {
+  const out = await handle({ ...session, hook_event_name: 'SubagentStop', stop_hook_active: false, last_assistant_message: 'The plan is robust.' }, { stateDir: tmp() });
+  assert.match(out.reason, /Make no tool calls and do no new work/u);
+  assert.match(out.reason, /do not shorten the report/u);
+  const json = JSON.stringify({ status: 'done', note: 'A robust plan.' });
+  assert.equal(await handle({ ...session, hook_event_name: 'SubagentStop', stop_hook_active: false, last_assistant_message: json }, { stateDir: tmp() }), undefined);
+});
+
+test('a rewrite that changes a number, name or negation is masked instead', async () => {
+  const display = (delta, rewrite) => handle({ ...session, hook_event_name: 'MessageDisplay', delta }, { stateDir: tmp(), rewordFn: async () => [rewrite] });
+  assert.equal((await display('The robust fix saves 40 ms in loader.gd.\n', 'The tested fix saves 4 ms in loader.gd.')).hookSpecificOutput.displayContent, `${MASK}\n`);
+  assert.equal((await display('The robust fix does not touch Godot.\n', 'The tested fix touches Godot.')).hookSpecificOutput.displayContent, `${MASK}\n`);
+  assert.equal((await display('The robust fix does not touch Godot.\n', 'The tested fix does not touch Unity.')).hookSpecificOutput.displayContent, `${MASK}\n`);
+  assert.equal(
+    (await display('The robust fix saves 40 ms in loader.gd.\n', 'The tested fix saves 40 ms in loader.gd.')).hookSpecificOutput.displayContent,
+    'The tested fix saves 40 ms in loader.gd.\n',
+  );
+});
+
+test('the next prompt says how a reworded sentence was shown', async () => {
+  const stateDir = tmp();
+  await handle({ ...session, hook_event_name: 'MessageDisplay', delta: 'We delve into it.\n' }, { stateDir, rewordFn: fixes });
+  const note = await handle({ ...session, prompt_id: 'p2', hook_event_name: 'UserPromptSubmit', prompt: 'next' }, { stateDir });
+  assert.match(note.hookSpecificOutput.additionalContext, /\(the person saw "We look at it\."\)/u);
+});

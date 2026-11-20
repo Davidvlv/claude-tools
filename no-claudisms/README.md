@@ -33,13 +33,15 @@ The plugin has one setting, `mode`. Set it in `/config`, or type `/no-claudisms 
 | Text | Hook | Result |
 | --- | --- | --- |
 | Each chat message of the main agent (`chat`) | `MessageDisplay` | Haiku rewords each sentence with a claudism, and the reworded sentence shows in its place on screen. The model and the transcript keep the original. |
-| The next prompt (`chat`) | `UserPromptSubmit` | The agent gets the phrases that were reworded on screen, with their hints, so it avoids them from then on. |
+| The next prompt (`chat`) | `UserPromptSubmit` | The agent gets the phrases that were reworded on screen, with their hints and the sentence the person saw, so it avoids them from then on and knows what was shown. |
 | The end of a main-agent turn (`chat`) | `Stop` | A sentence that Haiku could not reword shows as `[rewording]`. The stop is then blocked once, and the agent sends one closing message that says the flagged content again in plain words. |
-| A subagent's final report (`output`) | `SubagentStop` | The stop is blocked once, and the subagent sends its report again, reworded. |
-| `Write`, `Edit` and `MultiEdit` on `.md`, `.mdx`, `.markdown` and `.txt` files (`output`) | `PreToolUse` | The call is denied with the list of hits that the change adds. Hits already in the file do not count. |
-| `git commit`, `gh pr` or `gh issue` `create`/`edit`/`comment`, and `gh pr review`, in `Bash` or `PowerShell` (`output`) | `PreToolUse` | The same, for the command text and any file given with `-F`, `--file` or `--body-file`. |
+| A subagent's final report (`output`) | `SubagentStop` | The stop is blocked once, and the subagent sends the same report again with only the flagged phrases reworded, with no tool calls and no new work. A report that is valid JSON is not checked, because code reads it. |
+| `Write`, `Edit` and `MultiEdit` on `.md`, `.mdx` and `.markdown` files, and on `.txt` files named like prose (`README`, `CHANGELOG`, `CHANGES`, `HISTORY`, `NOTES`, `TODO`, `CONTRIBUTING`, `RELEASE-NOTES`) (`output`) | `PreToolUse` | The call is denied with the list of hits that the change adds. Hits already in the file do not count. Files under a `fixture`, `fixtures`, `testdata`, `test-data`, `snapshots`, `__snapshots__`, `golden`, `goldens` or `expected` folder are test data and are not checked. |
+| `git commit`, `gh pr` or `gh issue` `create`/`edit`/`comment`, and `gh pr review`, in `Bash` or `PowerShell` (`output`) | `PreToolUse` | The same, for the message arguments only: `-m`/`--message` and `-F`/`--file` of `git commit`, and `-t`/`--title`, `-b`/`--body` and `-F`/`--body-file` of `gh`. `-F -` reads the heredoc the command passes on stdin. The rest of the command is not checked, so code that the same command writes or runs is never flagged. |
 
-Text in code blocks, inline code, double quotes and URLs is not checked in chat and files, so the agent can quote a phrase. Command text is checked inside quotes, because `-m "..."` carries the message.
+Text in code blocks, inline code, double quotes and URLs is not checked, so the agent can quote a phrase.
+
+`scripts/command.mjs` reads the command with enough of Bash and PowerShell quoting to find those arguments: single and double quotes, `$'...'`, heredocs, `$(cat <<'EOF' ... EOF)`, PowerShell here-strings, and `;`, `&&`, `|` and newlines between commands.
 
 Each piece of text gets one rewrite request. A second `Stop` in the same turn passes, and a tool call retried with the same hits passes, so a name or a phrase with no other wording cannot loop.
 
@@ -49,7 +51,7 @@ Feedback lists at most 8 hits. Each line gives the phrase, its clause and a one-
 
 `scripts/reword.mjs` starts one `claude -p` run on Haiku for each chat message that has a claudism, with all its flagged sentences in one request. The run has its own short system prompt, thinking off, no tools, no MCP servers, no saved session and no user settings, so it loads no plugins or hooks. A flagged message appears about 3 to 4 seconds later and costs about $0.0008. Clean messages make no call.
 
-Haiku gets only the sentence and the phrases to remove, not the hints, because the hints give examples that Haiku would state as facts. A rewrite is rejected, and its sentence masked, when the call fails or takes more than 12 seconds, when the rewrite still has a claudism, or when it drops bold, code or links.
+Haiku gets only the sentence and the phrases to remove, not the hints, because the hints give examples that Haiku would state as facts. A rewrite is rejected, and its sentence masked, when the call fails or takes more than 12 seconds, when the rewrite still has a claudism, when it drops bold, code or links, or when it changes a fact. A fact is a number, path, file name, identifier, command flag, acronym or capitalized name outside the flagged phrases, and the rewrite must keep each one as written. It must also keep every negation (`not`, `no`, `never`, `n't`) outside the flagged phrases and add none, so a reworded "it's not X, it's Y" can drop only that phrase's own `not`. A masked sentence goes to the agent at `Stop`, which knows the context.
 
 ## Files
 
@@ -59,7 +61,8 @@ Haiku gets only the sentence and the phrases to remove, not the hints, because t
 - `skills/no-claudisms/SKILL.md`: the `/no-claudisms` command.
 - `scripts/mode.mjs`: reads and sets the mode, for the hooks and the command.
 - `scripts/log.mjs`: writes, prunes and counts the edit log.
-- `scripts/match.mjs`: the matcher.
+- `scripts/match.mjs`: the matcher and the fact check for rewrites.
+- `scripts/command.mjs`: finds the message arguments of a `git` or `gh` command.
 - `scripts/reword.mjs`: the Haiku reworder.
 - `scripts/refresh.mjs` and `scripts/corpus.mjs`: tools for maintainers, described below.
 
