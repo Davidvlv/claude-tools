@@ -1,0 +1,10 @@
+{
+  "name": "no-claudisms",
+  "description": "Hooks that catch stock AI phrasing from the claudisms.ai list in chat replies, subagent reports, markdown files, commit messages and PR text, hide it on screen and ask the agent to reword it, without putting the list in the model's context.",
+  "author": {
+    "name": "davidvlv",
+    "url": "https://github.com/davidvlv"
+  },
+  "repository": "https://github.com/Davidvlv/claude-tools",
+  "license": "MIT"
+}
