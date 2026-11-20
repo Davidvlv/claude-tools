@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "claude-tools",
-  "description": "Skills and playbooks for Claude Code: prompting Fable, an image looker, a Fable advisor and model-routing orchestration.",
+  "description": "Skills for Claude Code: prompting Fable, an image looker, a Fable advisor and a Haiku worker for mechanical jobs.",
   "owner": {
     "name": "davidvlv",
     "url": "https://github.com/davidvlv"
@@ -26,9 +26,9 @@
       "category": "productivity"
     },
     {
-      "name": "delegate-workers",
-      "description": "Opus (or Fable) orchestrator, Sonnet/Haiku for mechanical work only. Keeps the resident model on continuous top-tier reasoning by delegating execution and noisy output elsewhere.",
-      "source": "./delegate-workers",
+      "name": "haiku-worker",
+      "description": "A background Haiku subagent does one mechanical job, such as a search, a test run or an edit to a written spec, and returns only its result, so the main agent keeps its context and every judgment.",
+      "source": "./haiku-worker",
       "category": "productivity"
     }
   ]

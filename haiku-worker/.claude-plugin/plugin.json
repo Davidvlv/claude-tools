@@ -1,0 +1,10 @@
+{
+  "name": "haiku-worker",
+  "description": "Hand mechanical work (searches, code maps, digests, builds, test and log runs, edits to a written spec) to a background Haiku subagent that returns only its result, while the main agent keeps every judgment.",
+  "author": {
+    "name": "davidvlv",
+    "url": "https://github.com/davidvlv"
+  },
+  "repository": "https://github.com/Davidvlv/claude-tools",
+  "license": "MIT"
+}

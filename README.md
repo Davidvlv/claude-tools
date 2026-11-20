@@ -1,13 +1,13 @@
 # claude-tools
 
-A [Claude Code](https://claude.com/claude-code) plugin marketplace. Each plugin adds one skill.
+A [Claude Code](https://claude.com/claude-code) plugin marketplace. Each plugin adds one skill; `haiku-worker` adds its subagent too.
 
 | Plugin | What it does |
 | --- | --- |
 | [`fable-prompting`](fable-prompting/skills/fable-prompting/SKILL.md) | Prompting techniques for Claude Fable 5 and Mythos 5: when to change the effort level instead of the prompt, one prompt snippet per known failure mode, and how to scope work for a long autonomous run. Claude loads it when it writes or tunes a prompt, `CLAUDE.md`, skill or subagent brief that targets Fable. |
 | [`look`](look/skills/look/SKILL.md) | The looker: separate Claude runs look at screenshots and rate them against aims you write, so the agent judges a visual result without the image entering its own context. Two runs rate each aim, a third settles a disagreement, and a fresh-eye run reports what looks wrong. A before/after compare is judged blind, in random order. |
 | [`advisor`](advisor/skills/advisor/SKILL.md) | The advisor: a separate read-only Fable run decides a design or implementation question in the person's place and returns one choice with one reason. It sees the project, an index of the installed skills and its own earlier decisions for the project. It never approves an irreversible or outward-facing action; it answers those with `PARK`. |
-| [`delegate-workers`](delegate-workers/README.md) | Keeps Opus (or Fable) resident as the main thinking agent and delegates mechanical execution and noisy tool output to short-lived Sonnet or Haiku workers. Run it with `/delegate-workers`. |
+| [`haiku-worker`](haiku-worker/skills/haiku-worker/SKILL.md) | Hands one mechanical job, such as a search, a code map, a digest, a build or test run, or an edit to a written spec, to a background Haiku subagent that returns only its result: `PASS` or `FAIL` with the failing lines, the paths it changed, or the facts it found. The main agent keeps every judgment and keeps the noisy output out of its context. Claude loads it whenever such a job costs more context than its brief does to write. |
 
 ## Install
 
@@ -18,6 +18,7 @@ A [Claude Code](https://claude.com/claude-code) plugin marketplace. Each plugin 
 /plugin install fable-prompting@claude-tools
 /plugin install look@claude-tools
 /plugin install advisor@claude-tools
+/plugin install haiku-worker@claude-tools
 ```
 
 ### From `settings.json`
@@ -35,7 +36,7 @@ Add the marketplace and the plugins you want to `~/.claude/settings.json` (all p
     "fable-prompting@claude-tools": true,
     "look@claude-tools": true,
     "advisor@claude-tools": true,
-    "delegate-workers@claude-tools": true
+    "haiku-worker@claude-tools": true
   }
 }
 ```
@@ -44,7 +45,7 @@ Claude Code fetches the marketplace and installs the enabled plugins at its next
 
 ## Requirements
 
-`fable-prompting` and `delegate-workers` are text only.
+`fable-prompting` is text only. `haiku-worker` needs access to Claude Haiku; in a `claude -p` session it also runs a small wait script, which needs [Node.js](https://nodejs.org) 20 or later on `PATH`.
 
 `look` and `advisor` run scripts that start separate `claude -p` processes, so they need:
 
@@ -61,10 +62,10 @@ Claude Code fetches the marketplace and installs the enabled plugins at its next
 ## Tests
 
 ```
-node --test look/skills/look/look.test.mjs advisor/skills/advisor/advisor.test.mjs
+node --test look/skills/look/look.test.mjs advisor/skills/advisor/advisor.test.mjs haiku-worker/skills/haiku-worker/wait.test.mjs
 ```
 
-The tests use a fake `claude` command and make no model calls.
+The `look` and `advisor` tests use a fake `claude` command; no test makes a model call.
 
 ## License
 
