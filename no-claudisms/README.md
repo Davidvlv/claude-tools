@@ -41,7 +41,7 @@ The plugin has one setting, `mode`. Set it in `/config`, or type `/no-claudisms 
 
 Text in code blocks, inline code, double quotes and URLs is not checked, so the agent can quote a phrase.
 
-`scripts/command.mjs` reads the command with enough of Bash and PowerShell quoting to find those arguments: single and double quotes, `$'...'`, heredocs, `$(cat <<'EOF' ... EOF)`, PowerShell here-strings, and `;`, `&&`, `|` and newlines between commands.
+`scripts/command.mjs` reads the command with enough of Bash and PowerShell quoting to find those arguments: single and double quotes, `$'...'`, heredocs, `$(cat <<'EOF' ... EOF)`, PowerShell here-strings, and `;`, `&&`, `|` and newlines between commands. A message file path is expanded with the variables that the same command assigns before it (`SP=…`, `export SP=…`, PowerShell `$f = "…"`), and then with the environment. On Windows, a Git Bash path such as `/c/Users/…` is read as `C:\Users\…`.
 
 Each piece of text gets one rewrite request. A second `Stop` in the same turn passes, and a tool call retried with the same hits passes, so a name or a phrase with no other wording cannot loop.
 
