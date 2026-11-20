@@ -14,10 +14,17 @@ const MODES = { all: ['chat', 'output'], chat: ['chat'], output: ['output'], off
 const EVENT_SCOPE = { MessageDisplay: 'chat', Stop: 'chat', UserPromptSubmit: 'chat', SubagentStop: 'output', PreToolUse: 'output' };
 const MAX_NOTES = 8;
 
+const MODE_COMMAND = /^\s*\/no-claudisms(?::[\w-]+)?(?:\s+(\S+))?\s*$/iu;
+const MODE_FILE = 'mode-override.json';
+
 export async function handle(input, { rules = loadRules(), stateDir = defaultStateDir(), mode = process.env.CLAUDE_PLUGIN_OPTION_MODE, rewordFn = reword } = {}) {
   // The reworder's own claude process must not run these hooks on its reply.
   if (process.env[CHILD_ENV]) return undefined;
-  const scopes = MODES[mode] ?? MODES.all;
+  // The mode command works in every mode, including off, so it can turn checking back on.
+  if (input.hook_event_name === 'UserPromptSubmit' && MODE_COMMAND.test(input.prompt ?? '')) {
+    return onModeCommand(input.prompt, stateDir, mode);
+  }
+  const scopes = MODES[effectiveMode(stateDir, mode)];
   if (!scopes.includes(EVENT_SCOPE[input.hook_event_name])) return undefined;
   switch (input.hook_event_name) {
     case 'MessageDisplay':
@@ -33,6 +40,32 @@ export async function handle(input, { rules = loadRules(), stateDir = defaultSta
     default:
       return undefined;
   }
+}
+
+// /no-claudisms <mode> sets the mode for all sessions. The hook blocks the prompt, so the command
+// never reaches the model. The override remembers the /config value it replaced: when /config
+// later changes, the newer /config choice wins and the override is dropped.
+function effectiveMode(stateDir, configMode) {
+  const config = configMode in MODES ? configMode : 'all';
+  try {
+    const o = JSON.parse(fs.readFileSync(path.join(stateDir, MODE_FILE), 'utf8'));
+    if (o.mode in MODES && o.config === config) return o.mode;
+    fs.unlinkSync(path.join(stateDir, MODE_FILE));
+  } catch {}
+  return config;
+}
+
+function onModeCommand(prompt, stateDir, configMode) {
+  const wanted = prompt.match(MODE_COMMAND)[1]?.toLowerCase();
+  const reply = (text) => ({ decision: 'block', reason: text, hookSpecificOutput: { hookEventName: 'UserPromptSubmit', suppressOriginalPrompt: true } });
+  const usage = 'Use /no-claudisms all, chat, output or off.';
+  if (!wanted) return reply(`no-claudisms mode: ${effectiveMode(stateDir, configMode)}. ${usage}`);
+  if (!(wanted in MODES)) return reply(`no-claudisms: unknown mode "${wanted}". ${usage}`);
+  const config = configMode in MODES ? configMode : 'all';
+  fs.mkdirSync(stateDir, { recursive: true });
+  if (wanted === config) fs.rmSync(path.join(stateDir, MODE_FILE), { force: true });
+  else fs.writeFileSync(path.join(stateDir, MODE_FILE), JSON.stringify({ mode: wanted, config }));
+  return reply(`no-claudisms mode: ${wanted}, for all sessions.`);
 }
 
 // The display hook changes only the screen; the model and the transcript keep the original.
@@ -240,7 +273,7 @@ function pruneState(dir) {
   for (const f of fs.readdirSync(dir)) {
     const p = path.join(dir, f);
     try {
-      if (f.endsWith('.json') && fs.statSync(p).mtimeMs < cutoff) fs.unlinkSync(p);
+      if (f.endsWith('.json') && f !== MODE_FILE && fs.statSync(p).mtimeMs < cutoff) fs.unlinkSync(p);
     } catch {}
   }
 }

@@ -138,3 +138,32 @@ test('a rewrite that drops bold, code or links is masked instead', async () => {
   );
   assert.equal(out.hookSpecificOutput.displayContent, `**Plan:** ${MASK}\n`);
 });
+
+test('/no-claudisms sets the mode for all sessions without reaching the model', async () => {
+  const stateDir = tmp();
+  const cmd = (prompt, mode) => handle({ ...session, hook_event_name: 'UserPromptSubmit', prompt }, { stateDir, mode });
+  const display = (session_id, mode) =>
+    handle({ ...session, session_id, hook_event_name: 'MessageDisplay', delta: 'We delve into it.\n' }, { stateDir, mode, rewordFn: fixes });
+
+  const set = await cmd('/no-claudisms off');
+  assert.equal(set.decision, 'block');
+  assert.equal(set.hookSpecificOutput.suppressOriginalPrompt, true);
+  assert.match(set.reason, /mode: off, for all sessions/u);
+  assert.equal(await display('other-session'), undefined);
+  assert.match((await cmd('/no-claudisms')).reason, /mode: off\./u);
+
+  // The command works while off, and the plugin-prefixed form works too.
+  assert.match((await cmd('/no-claudisms:no-claudisms chat')).reason, /mode: chat/u);
+  assert.notEqual(await display('other-session'), undefined);
+  assert.match((await cmd('/no-claudisms loud')).reason, /unknown mode "loud"/u);
+});
+
+test('a later /config change wins over the command', async () => {
+  const stateDir = tmp();
+  await handle({ ...session, hook_event_name: 'UserPromptSubmit', prompt: '/no-claudisms off' }, { stateDir, mode: 'all' });
+  const display = (mode) => handle({ ...session, hook_event_name: 'MessageDisplay', delta: 'We delve into it.\n' }, { stateDir, mode, rewordFn: fixes });
+  assert.equal(await display('all'), undefined);
+  assert.notEqual(await display('chat'), undefined);
+  // The override is gone, so switching /config back does not bring it back.
+  assert.notEqual(await display('all'), undefined);
+});
