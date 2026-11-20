@@ -150,3 +150,21 @@ test('the /no-claudisms override decides which hooks act', async () => {
   assert.notEqual(await display('chat'), undefined);
   assert.equal(fs.existsSync(modeFile), false);
 });
+
+test('each edit and request goes to the edit log', async () => {
+  const stateDir = tmp();
+  const logTo = tmp();
+  const entries = () => fs.readdirSync(logTo).flatMap((f) => fs.readFileSync(path.join(logTo, f), 'utf8').trim().split('\n').map((l) => JSON.parse(l)));
+  await handle({ ...session, hook_event_name: 'MessageDisplay', delta: 'We delve into it. Step one is robust.\n' }, { stateDir, logTo, rewordFn: async () => ['We look at it.', null] });
+  await handle({ ...session, hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: 'x' }, { stateDir, logTo });
+  const input = pre('Write', { file_path: path.join(tmp(), 'log.md'), content: 'A seamless plan.' });
+  await handle(input, { stateDir, logTo });
+  await handle(input, { stateDir, logTo });
+  const log = entries();
+  assert.deepEqual(log.map((e) => e.event), ['reworded', 'masked', 'closing-message-requested', 'denied', 'retry-allowed']);
+  assert.equal(log[0].clause, 'We delve into it.');
+  assert.equal(log[0].replacement, 'We look at it.');
+  assert.equal(log[1].replacement, null);
+  assert.equal(log[0].session, 's1');
+  assert.deepEqual(log[3].hits.map((h) => h.match.toLowerCase()), ['seamless']);
+});

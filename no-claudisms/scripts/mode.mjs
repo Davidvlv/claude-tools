@@ -1,15 +1,16 @@
 // The mode: which hooks act. /config sets it; /no-claudisms <mode> overrides it for all sessions.
 // The override lives in the Claude config folder, not the plugin data folder, because the
 // command's shell step and the hooks must find the same file and only hooks get CLAUDE_PLUGIN_DATA.
-// Usage (from the /no-claudisms skill): node mode.mjs [<new-mode>]
+// Usage (from the /no-claudisms skill): node mode.mjs [<new-mode>|status]
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { LOG_DAYS, logDir, logCount } from './log.mjs';
 
 export const MODES = { all: ['chat', 'output'], chat: ['chat'], output: ['output'], off: [] };
 
-function configDir() {
+export function configDir() {
   return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 }
 
@@ -45,10 +46,12 @@ export function effectiveMode(configMode, file = overrideFile()) {
   return config;
 }
 
-export function modeCommand(configMode, wanted, file = overrideFile()) {
-  const usage = 'Use /no-claudisms all, chat, output or off.';
+export function modeCommand(configMode, wanted, file = overrideFile(), log = logDir()) {
+  const usage = 'Use /no-claudisms all, chat, output, off or status.';
   const mode = wanted?.trim().toLowerCase();
-  if (!mode) return `no-claudisms mode: ${effectiveMode(configMode, file)}. ${usage}`;
+  if (!mode || mode === 'status') {
+    return `no-claudisms mode: ${effectiveMode(configMode, file)}. Edit log: ${logCount(log)} entries from the last ${LOG_DAYS} days in ${log}. ${usage}`;
+  }
   if (!(mode in MODES)) return `no-claudisms: unknown mode "${mode}". ${usage}`;
   const config = configOf(configMode);
   fs.mkdirSync(path.dirname(file), { recursive: true });

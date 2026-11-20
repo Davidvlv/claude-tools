@@ -13,8 +13,13 @@ test('the command sets, shows and rejects modes', () => {
   const file = path.join(tmp(), 'mode.json');
   assert.equal(modeCommand('all', 'off', file), 'no-claudisms mode: off, for all sessions.');
   assert.equal(effectiveMode('all', file), 'off');
-  assert.match(modeCommand('all', '', file), /^no-claudisms mode: off\. Use /u);
   assert.match(modeCommand('all', 'loud', file), /unknown mode "loud"/u);
+  const log = tmp();
+  fs.writeFileSync(path.join(log, '2026-11-20.jsonl'), '{}\n{}\n');
+  const status = modeCommand('all', 'Status', file, log);
+  assert.match(status, /^no-claudisms mode: off\. Edit log: 2 entries from the last 7 days in /u);
+  assert.ok(status.includes(log));
+  assert.equal(modeCommand('all', '', file, log), status);
   // Setting the /config value again removes the override.
   modeCommand('all', 'ALL', file);
   assert.equal(fs.existsSync(file), false);

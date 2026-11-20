@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { loadRules, findHits, addedHits, clauseGroups, replaceClauses, hitLines } from './match.mjs';
 import { reword, CHILD_ENV } from './reword.mjs';
 import { MODES, effectiveMode } from './mode.mjs';
+import { logEdit, logDir } from './log.mjs';
 
 const PROSE_FILE = /\.(?:md|mdx|markdown|txt)$/iu;
 const PUBLISH_COMMAND = /\bgit\s+(?:-[cC]\s+\S+\s+)*commit\b|\bgh\s+(?:pr|issue)\s+(?:create|edit|comment)\b|\bgh\s+pr\s+review\b/u;
@@ -14,22 +15,26 @@ const STATE_DAYS = 2;
 const EVENT_SCOPE = { MessageDisplay: 'chat', Stop: 'chat', UserPromptSubmit: 'chat', SubagentStop: 'output', PreToolUse: 'output' };
 const MAX_NOTES = 8;
 
-export async function handle(input, { rules = loadRules(), stateDir = defaultStateDir(), mode = process.env.CLAUDE_PLUGIN_OPTION_MODE, modeFile, rewordFn = reword } = {}) {
+export async function handle(
+  input,
+  { rules = loadRules(), stateDir = defaultStateDir(), mode = process.env.CLAUDE_PLUGIN_OPTION_MODE, modeFile, rewordFn = reword, logTo = logDir() } = {},
+) {
   // The reworder's own claude process must not run these hooks on its reply.
   if (process.env[CHILD_ENV]) return undefined;
   const scopes = MODES[effectiveMode(mode, modeFile)];
   if (!scopes.includes(EVENT_SCOPE[input.hook_event_name])) return undefined;
+  const log = (event, fields) => logEdit({ session: input.session_id, cwd: input.cwd, event, ...fields }, { dir: logTo });
   switch (input.hook_event_name) {
     case 'MessageDisplay':
-      return onDisplay(input, rules, stateDir, rewordFn);
+      return onDisplay(input, rules, stateDir, rewordFn, log);
     case 'Stop':
-      return onStop(input, rules, stateDir);
+      return onStop(input, rules, stateDir, log);
     case 'UserPromptSubmit':
       return onPrompt(input, stateDir);
     case 'SubagentStop':
-      return onSubagentStop(input, rules);
+      return onSubagentStop(input, rules, log);
     case 'PreToolUse':
-      return onPreToolUse(input, rules, stateDir);
+      return onPreToolUse(input, rules, stateDir, log);
     default:
       return undefined;
   }
@@ -38,7 +43,7 @@ export async function handle(input, { rules = loadRules(), stateDir = defaultSta
 // The display hook changes only the screen; the model and the transcript keep the original.
 // Flagged sentences are reworded in place by Haiku. A sentence Haiku cannot fix is masked,
 // and the Stop hook then asks the agent itself for the reworded content.
-async function onDisplay(input, rules, stateDir, rewordFn) {
+async function onDisplay(input, rules, stateDir, rewordFn, log) {
   const state = readState(stateDir, input.session_id);
   const turn = turnOf(state, input);
   const firstCall = !turn.displayed;
@@ -58,6 +63,7 @@ async function onDisplay(input, rules, stateDir, rewordFn) {
   });
   groups.forEach((g, i) => {
     if (replacements[i] === null) turn.hits.push(...g.hits.map(slim));
+    log(replacements[i] === null ? 'masked' : 'reworded', { clause: g.clause, replacement: replacements[i], hits: g.hits.map(brief) });
   });
   for (const h of hits) if (!state.notes.some((n) => n.match.toLowerCase() === h.match.toLowerCase())) state.notes.push(slim(h));
   state.notes = state.notes.slice(-MAX_NOTES);
@@ -75,7 +81,11 @@ function slim({ id, match, clause, hint }) {
   return { id, match, clause, hint };
 }
 
-function onStop(input, rules, stateDir) {
+function brief({ id, match }) {
+  return { id, match };
+}
+
+function onStop(input, rules, stateDir, log) {
   const state = readState(stateDir, input.session_id);
   const turn = turnOf(state, input);
   if (input.stop_hook_active || turn.requested) {
@@ -94,6 +104,7 @@ function onStop(input, rules, stateDir) {
     return undefined;
   }
   turn.requested = true;
+  log('closing-message-requested', { hits: hits.map(brief) });
   // The agent is told about these now, so the next prompt does not repeat them as a note.
   state.notes = state.notes.filter((n) => !hits.some((h) => h.match.toLowerCase() === n.match.toLowerCase()));
   writeState(stateDir, input.session_id, state);
@@ -123,17 +134,18 @@ function onPrompt(input, stateDir) {
   };
 }
 
-function onSubagentStop(input, rules) {
+function onSubagentStop(input, rules, log) {
   if (input.stop_hook_active) return undefined;
   const hits = findHits(input.last_assistant_message ?? '', rules);
   if (hits.length === 0) return undefined;
+  log('report-reword-requested', { agent: input.agent_type, hits: hits.map(brief) });
   return {
     decision: 'block',
     reason: 'no-claudisms: your report uses stock AI phrasing. Send the report again with these reworded in plain words:\n' + hitLines(hits),
   };
 }
 
-function onPreToolUse(input, rules, stateDir) {
+function onPreToolUse(input, rules, stateDir, log) {
   const target = prose(input);
   if (!target) return undefined;
   const hits = addedHits(target.before, target.after, rules, { quotes: target.quotes });
@@ -146,10 +158,12 @@ function onPreToolUse(input, rules, stateDir) {
   if (state.denied[target.key] === signature) {
     delete state.denied[target.key];
     writeState(stateDir, input.session_id, state);
+    log('retry-allowed', { tool: input.tool_name, target: target.key, hits: hits.map(brief) });
     return undefined;
   }
   state.denied[target.key] = signature;
   writeState(stateDir, input.session_id, state);
+  log('denied', { tool: input.tool_name, target: target.key, hits: hits.map(brief) });
   return {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',

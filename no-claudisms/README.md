@@ -26,7 +26,7 @@ The plugin has one setting, `mode`. Set it in `/config`, or type `/no-claudisms 
 - `output`: only markdown files, commit and PR text, and subagent reports.
 - `off`: nothing.
 
-`/config` stores the choice under `pluginConfigs` in your `settings.json`. `/no-claudisms <mode>` sets the mode for all sessions, until you change it again with the command or in `/config`; the later change wins. `/no-claudisms` alone shows the current mode. The command's skill runs `scripts/mode.mjs` as a shell step before the model sees it, and the model replies with the one line the script prints. Each use costs one short model turn. The skill has `disable-model-invocation: true`, so its description is not in the model's context, and it pre-approves only that script. The command's choice is stored in `no-claudisms/mode.json` in the Claude config folder (`~/.claude`, or `CLAUDE_CONFIG_DIR`).
+`/config` stores the choice under `pluginConfigs` in your `settings.json`. `/no-claudisms <mode>` sets the mode for all sessions, until you change it again with the command or in `/config`; the later change wins. `/no-claudisms status`, or `/no-claudisms` alone, shows the current mode and the number of entries in the edit log, with its folder. The command's skill runs `scripts/mode.mjs` as a shell step before the model sees it, and the model replies with the one line the script prints. Each use costs one short model turn. The skill has `disable-model-invocation: true`, so its description is not in the model's context, and it pre-approves only that script. The command's choice is stored in `no-claudisms/mode.json` in the Claude config folder (`~/.claude`, or `CLAUDE_CONFIG_DIR`).
 
 ## What is checked
 
@@ -36,7 +36,6 @@ The plugin has one setting, `mode`. Set it in `/config`, or type `/no-claudisms 
 | The next prompt (`chat`) | `UserPromptSubmit` | The agent gets the phrases that were reworded on screen, with their hints, so it avoids them from then on. |
 | The end of a main-agent turn (`chat`) | `Stop` | A sentence that Haiku could not reword shows as `[rewording]`. The stop is then blocked once, and the agent sends one closing message that says the flagged content again in plain words. |
 | A subagent's final report (`output`) | `SubagentStop` | The stop is blocked once, and the subagent sends its report again, reworded. |
-| A subagent's final report | `SubagentStop` | The stop is blocked once, and the subagent sends its report again, reworded. |
 | `Write`, `Edit` and `MultiEdit` on `.md`, `.mdx`, `.markdown` and `.txt` files (`output`) | `PreToolUse` | The call is denied with the list of hits that the change adds. Hits already in the file do not count. |
 | `git commit`, `gh pr` or `gh issue` `create`/`edit`/`comment`, and `gh pr review`, in `Bash` or `PowerShell` (`output`) | `PreToolUse` | The same, for the command text and any file given with `-F`, `--file` or `--body-file`. |
 
@@ -59,6 +58,7 @@ Haiku gets only the sentence and the phrases to remove, not the hints, because t
 - `scripts/hook.mjs`: the one entry point for every hook event.
 - `skills/no-claudisms/SKILL.md`: the `/no-claudisms` command.
 - `scripts/mode.mjs`: reads and sets the mode, for the hooks and the command.
+- `scripts/log.mjs`: writes, prunes and counts the edit log.
 - `scripts/match.mjs`: the matcher.
 - `scripts/reword.mjs`: the Haiku reworder.
 - `scripts/refresh.mjs` and `scripts/corpus.mjs`: tools for maintainers, described below.
@@ -66,6 +66,17 @@ Haiku gets only the sentence and the phrases to remove, not the hints, because t
 Terms that are common words used as metaphors ("shape", "lives", "moves", "names") are off or narrowed, because their literal use in developer and game-development text is far more common. The same applies to structural tics that a phrase match cannot see (lists of bold terms, runs of short sentences) and to emojis, which some skills require.
 
 The hooks keep per-session state in `${CLAUDE_PLUGIN_DATA}` and delete files older than two days.
+
+## Edit log
+
+The hooks write one JSON line for each change they make or ask for, to `no-claudisms/log/<date>.jsonl` in the Claude config folder, one file per local day. When the first entry of a day is written, files older than 7 days are deleted. Each line has `time`, `session`, `cwd`, `event` and `hits` (the term id and matched phrase of each hit). The events are:
+
+- `reworded`: Haiku reworded a sentence on screen. `clause` is the original and `replacement` is what was shown.
+- `masked`: no usable rewrite came back, so the sentence showed as `[rewording]`. `replacement` is `null`.
+- `closing-message-requested`: the `Stop` hook asked the agent for a reworded closing message.
+- `report-reword-requested`: the `SubagentStop` hook asked a subagent to send its report again. `agent` is the subagent type.
+- `denied`: a `PreToolUse` call was denied. `tool` is the tool and `target` is the file path or the command kind.
+- `retry-allowed`: the same call was retried with the same hits and let through.
 
 ## Maintenance
 

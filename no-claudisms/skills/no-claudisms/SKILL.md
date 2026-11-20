@@ -1,7 +1,7 @@
 ---
 name: no-claudisms
-description: Set the no-claudisms mode for all sessions, or show it.
-argument-hint: "[all|chat|output|off]"
+description: Set the no-claudisms mode for all sessions, or show it and the edit log.
+argument-hint: "[all|chat|output|off|status]"
 disable-model-invocation: true
 allowed-tools: Bash(node *no-claudisms/scripts/mode.mjs*)
 ---
