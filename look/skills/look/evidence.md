@@ -1,6 +1,6 @@
 # What vision models can judge from pictures
 
-Research evidence behind the look skill's rules. Each finding names its source; the sources and how each was read are in [reviewed-sources.md](reviewed-sources.md).
+Research evidence behind the look skill's rules. Each finding names its source.
 
 ## Image input to Claude
 
