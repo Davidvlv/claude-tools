@@ -1,0 +1,10 @@
+{
+  "name": "look",
+  "description": "Have screenshots looked at by separate Claude runs that rate them against your aims, compare a before and an after blind, and report what looks wrong, so the image never enters the working agent's context.",
+  "author": {
+    "name": "davidvlv",
+    "url": "https://github.com/davidvlv"
+  },
+  "repository": "https://github.com/Davidvlv/claude-tools",
+  "license": "MIT"
+}

@@ -1,16 +1,28 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "claude-delegate-consult-agents",
-  "description": "Cost-efficient model-routing playbook for Claude Code sessions.",
+  "name": "claude-tools",
+  "description": "Skills and playbooks for Claude Code: prompting Fable, an image looker, a Fable advisor and model-routing orchestration.",
   "owner": {
     "name": "davidvlv",
     "url": "https://github.com/davidvlv"
   },
   "plugins": [
     {
-      "name": "consult-thinkers",
-      "description": "Sonnet orchestrator, Opus for reasoning only. Cuts cache_read cost by keeping the long-lived session on a cheap model.",
-      "source": "./",
+      "name": "fable-prompting",
+      "description": "Prompting techniques for Claude Fable 5 and Mythos 5: effort levels, symptom-to-fix snippets and task scoping.",
+      "source": "./fable-prompting",
+      "category": "productivity"
+    },
+    {
+      "name": "look",
+      "description": "Separate model runs look at screenshots and rate them against your aims, so the agent judges a visual result without reading the image itself.",
+      "source": "./look",
+      "category": "development"
+    },
+    {
+      "name": "advisor",
+      "description": "A separate read-only Fable run decides a design or implementation question in the person's place and returns one choice with its reason.",
+      "source": "./advisor",
       "category": "productivity"
     },
     {

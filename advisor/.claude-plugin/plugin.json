@@ -1,0 +1,10 @@
+{
+  "name": "advisor",
+  "description": "Have a separate read-only Fable run decide a design or implementation question in the person's place, with the installed skills and earlier decisions as context, and return one choice with its reason.",
+  "author": {
+    "name": "davidvlv",
+    "url": "https://github.com/davidvlv"
+  },
+  "repository": "https://github.com/Davidvlv/claude-tools",
+  "license": "MIT"
+}

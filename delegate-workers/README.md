@@ -1,6 +1,6 @@
 # delegate-workers
 
-Continuity-first orchestration playbook for [Claude Code](https://claude.com/claude-code) — the inverse of [`consult-thinkers`](../README.md).
+Continuity-first orchestration playbook for [Claude Code](https://claude.com/claude-code).
 
 The main session runs on Opus (or Fable) as the resident thinker, for the
 whole session. Reasoning, architecture calls, and anything that needs this
@@ -20,17 +20,15 @@ already-expensive context: mechanical work happens and gets mostly discarded
 at cheap rates in an isolated subagent, so only a small, high-value result
 ever joins the resident context.
 
-If raw dollar cost matters most, [`consult-thinkers`](../README.md)'
-Sonnet-resident setup is strictly cheaper — use that instead. Use this one
-when the session's value comes from sustained judgment (a long design
+Use it when the session's value comes from sustained judgment (a long design
 conversation, an incident review, an iterative creative-writing session) and
 you don't want mechanical grunt work diluting it.
 
 ## Install
 
 ```
-/plugin marketplace add davidvlv/claude-delegate-consult-agents
-/plugin install delegate-workers
+/plugin marketplace add Davidvlv/claude-tools
+/plugin install delegate-workers@claude-tools
 ```
 
 ## Use

@@ -15,9 +15,8 @@ Fires on every user prompt. Two jobs:
    rule back into context as hidden `additionalContext`.
 
 Why re-anchor: `SKILL.md` loads once, at invocation, then sits atop a context
-that only grows — its pull fades over a long session. Here the drift is toward
-convenience (doing mechanical work yourself instead of delegating it) rather
-than toward under-escalating judgment, but the fix is the same: a per-turn
+that only grows — its pull fades over a long session, and the resident agent
+drifts toward doing mechanical work itself instead of delegating it. A per-turn
 re-injection is the one signal that comes from outside the growing context, so
 it re-anchors reliably where the static skill text cannot.
 
@@ -38,8 +37,6 @@ $CLAUDE_CONFIG_DIR/.delegate-workers/active-<session_id>
   ones.
 - Stale flags (older than 7 days) are swept on each run, since a session that
   just ends never clears its own flag.
-- Namespaced separately from consult-thinkers' `.consult-thinkers/` flag dir, so
-  the two plugins' activation states never collide if both are installed.
 
 ## Security
 
@@ -54,8 +51,8 @@ $CLAUDE_CONFIG_DIR/.delegate-workers/active-<session_id>
 ## Cost
 
 The reminder is one short paragraph, injected only on turns where the mode is
-active. Unlike consult-thinkers' reminder, this one rides the *resident* (expensive)
-model's context on every active turn rather than a cheap one, so keeping it
+active. It rides the *resident* (expensive) model's context on every active
+turn, so keeping it
 tight matters even more here — the paragraph itself is a fixed, small cost, but
 it's charged at the higher rate for the rest of the session once it's in
 context.
