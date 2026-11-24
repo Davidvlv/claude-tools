@@ -37,6 +37,61 @@ test('leaves literal developer and game words alone', () => {
   for (const t of plain) assert.deepEqual(ids(t), [], t);
 });
 
+test('flags hold as a verdict and as a metaphor, but only the verb', () => {
+  const matches = (text) => findHits(text, rules).map((h) => `${h.id}:${h.match}`);
+  assert.deepEqual(matches('The tests hold.'), ['hold:hold']);
+  assert.deepEqual(matches("So even if enabled, it wouldn't hold."), ['hold:hold']);
+  assert.deepEqual(matches("The plan's measurements still hold, so we ship."), ['hold:hold']);
+  assert.deepEqual(matches('This holds when the cache is warm.'), ['hold:holds when']);
+  assert.deepEqual(matches('Sonnet holds up; Haiku does not.'), ['hold:holds up']);
+  assert.deepEqual(matches('The rationale held up: the dry run came first.'), ['hold:held up']);
+  assert.deepEqual(matches('The preconditions all hold, yet no slide.'), ['hold:hold']);
+  assert.deepEqual(matches("The key rule in step 7 still holds."), ['hold:holds']);
+  assert.deepEqual(matches('That guard holds the line for one hazard.'), ['hold:holds the line']);
+  assert.deepEqual(matches('We keep holding both at once.'), ['hold:holding both at once']);
+});
+
+test('leaves literal hold alone', () => {
+  const plain = [
+    'Shift is held.',
+    'Press F and hold Space.',
+    'Take a Hold when a face is near.',
+    'The folder holds 2 sessions.',
+    'The worker finishes the request it holds.',
+    'The arm held up, and the golem jumps.',
+    'Hold on, the merge failed.',
+    'They hold two ideas plus repeat verdicts.',
+    'It climbs onto the roof on the same Hold, and back.',
+    'On a still Hold, each hand rests on a face.',
+  ];
+  for (const t of plain) assert.deepEqual(ids(t), [], t);
+});
+
+test('flags shape and surface only in their metaphor forms', () => {
+  assert.deepEqual(ids('Your answers decide the shape of the plan.'), ['shape']);
+  assert.deepEqual(ids("I'll surface the design question soon."), ['surface']);
+  assert.deepEqual(ids('Merging now surfaces any conflicts early.'), ['surface']);
+  assert.deepEqual(ids('Two bugs surfaced only under test.'), ['surface']);
+  assert.deepEqual(ids('It is worth surfacing to the team later.'), ['surface']);
+  assert.deepEqual(ids('Now it surfaces the central design tension.'), ['surface']);
+  assert.deepEqual(ids('Three facts from the investigation shape these questions.'), ['shape']);
+  assert.deepEqual(ids('One finding shaped the whole damage design.'), ['shape']);
+  assert.deepEqual(ids('The strangler was the right shape for that time.'), ['shape']);
+  const literal = [
+    'The shape of the mesh is wrong.',
+    'The ray hits the surface it creates.',
+    'Paint the surface the player stands on.',
+    'Every surface that creates a task accepts the field.',
+    'Tell the person which surface they are using.',
+    'The test may change which shape it names.',
+    'Easing shapes the motion to the next key.',
+    'The clouds slowly change shape.',
+  ];
+  for (const t of literal) {
+    assert.deepEqual(ids(t), [], t);
+  }
+});
+
 test('skips code, quotes and URLs', () => {
   assert.deepEqual(ids('Run `delve --deep` first.'), []);
   assert.deepEqual(ids('```\nlet x = 1 — 2 // delve\n```\nDone.'), []);
