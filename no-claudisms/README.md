@@ -66,7 +66,7 @@ Haiku gets only the sentence and the phrases to remove, not the hints, because t
 - `scripts/reword.mjs`: the Haiku reworder.
 - `scripts/refresh.mjs` and `scripts/corpus.mjs`: tools for maintainers, described below.
 
-Terms that are common words used as metaphors ("shape", "lives", "moves", "names") are off or narrowed, because their literal use in developer and game-development text is far more common. The same applies to structural tics that a phrase match cannot see (lists of bold terms, runs of short sentences) and to emojis, which some skills require.
+Terms that are common words used as metaphors ("shape", "lives", "moves", "names") are off or narrowed, because their literal use in developer and game-development text is far more common. `hold`, `shape` and `surface` match only their figurative forms: "the tests hold", "this holds when", "holds up", "the shape of the plan", "one finding shaped the design", "the right shape", "surface the question", "two bugs surfaced". The same applies to structural tics that a phrase match cannot see (lists of bold terms, runs of short sentences) and to emojis, which some skills require.
 
 The hooks keep per-session state in `${CLAUDE_PLUGIN_DATA}` and delete files older than two days.
 
