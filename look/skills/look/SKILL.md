@@ -1,6 +1,6 @@
 ---
 name: look
-description: Have a screenshot or any other image looked at by separate models, which rate it against your aims and report what looks wrong, so the picture never enters your own context. Use whenever a task needs someone to see an image you captured, to judge how something looks, or to compare a before and after.
+description: Have a screenshot or any other image looked at by separate models, which rate it against your aims and report what looks wrong, so the picture never enters your own context. Use whenever a task needs someone to see an image you captured, to judge how something looks, or to compare a before and after, and before writing a visual criterion or aim.
 ---
 
 # look
@@ -8,6 +8,19 @@ description: Have a screenshot or any other image looked at by separate models, 
 A looker is a set of model runs with nothing loaded but the pictures and your question. You work from its output and never read those pictures yourself, with the Read tool or with any tool that returns a picture. The reasons behind the rules below are in [evidence.md](evidence.md).
 
 When the user is present and can see the result, the user judges how it looks: show them a side-by-side comparison when you can, and ask them your questions about it. Use the looker when no one is there to judge.
+
+## Measure what the program can answer
+
+This holds whoever judges the picture, the looker or the user. Split each thing you need to verify before you capture anything. When one query on the program's own data answers a part exactly, check that part on the data and leave it out of the aims:
+
+- whether things touch, rest on, sink into, pass through, overlap or float off each other;
+- a position, size, distance, angle, slope or spacing, and alignment to a grid;
+- a count, and whether a thing exists in the scene or lies inside the camera's frame;
+- motion, timing and direction of travel, from data recorded over time.
+
+Read these from the program's state, from ray and shape queries, and from its mesh, voxel or height data. Where the project has a test harness, make each one a scripted check. Measure the thing that is drawn: the visible mesh or cubes, on the build's result. A collider, the target the code aims at, or the setting that should produce the result is not that thing, and a check on it passes whenever the code ran. A vision model misjudges positions, contacts and counts, so its verdict on them can pass a fault that a measurement catches.
+
+The looker gets what needs eyes: what a thing reads as, whether it stands out, its silhouette, colour and light, whether it is drawn and can be seen (not blank, hidden, see-through or the wrong colour), and a pattern across the picture, such as how roughness varies along a cliff. When one thing holds both, as in "the armour fits the body rather than floating off it", measure the fact (the gap between armour and body) and ask only how it reads. When the user gave a number for a pattern, measure that number and report it beside the verdict block; the aim stays. When the user gave a degree in words, such as "about ten percent vertical", state in one line the number you turned it into.
 
 ## Ask
 
@@ -32,8 +45,7 @@ Every before/after question is a `--compare`: the looker sees the two sets as X 
 - **Views.** When the user named or showed the view they judged from, capture that exact view. Add the view a user sees first, one near view and one far view. Each picture shows one state; a compare shows the same views on both sides.
 - **Detail.** Capture at 2560 × 1440 when the subject is fine detail, such as a cliff face or a texture. Crop or enlarge a subject that fills a small part of the frame.
 - **Still scenes for a compare.** Hold random seeds and animation still in the capture, so the only pixels that differ between before and after are your change.
-- **Motion.** A still cannot show motion, timing or direction; never ask about them from stills. Decide motion from the program's own state data (positions, velocities, contacts) recorded over time. No motion image kind (frame grid, path trail or ghosted composite) is confirmed to read motion the way the user sees it, so what the looker says about them is a candidate to check in the state data, never a verdict.
-- **Numbers.** When an aim has a measurable number, such as a share of sheer walls or a spacing, measure it on the old and the new build, and report both values beside the verdict block. When you turned the user's words into a number, state that translation in one line.
+- **Motion.** A still cannot show motion, timing or direction, so no aim asks about them. No motion image kind (frame grid, path trail or ghosted composite) is confirmed to read motion the way the user sees it, so what the looker says about one is a candidate to check in the recorded data, never a verdict.
 
 ## Read the output
 
